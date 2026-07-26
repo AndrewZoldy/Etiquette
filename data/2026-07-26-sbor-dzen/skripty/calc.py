@@ -1,68 +1,70 @@
-# -*- coding: utf-8 -*-
-import json, statistics, io, sys
-sys.stdout.reconfigure(encoding='utf-8')
+import statistics as st
 
-p = r"C:/Users/andre/AppData/Local/Temp/claude/d--Work-Etiquette-Etiquette/cb7faf60-9cf2-48cf-8e9b-78a1a01a6376/scratchpad/out/themes/публичные_места_транспорт.json"
-raw = open(p, encoding='utf-8').read().replace("NaN", "null")
-d = json.loads(raw)
-arts = d["статьи"]
-for i, a in enumerate(arts):
-    a["id"] = i + 1
+# date, words, showings, opens, reads, ctr, readthrough
+rows = [
+("18.05",1505,7607,238,86,0.0313,0.361),
+("25.05",1808,5685,179,45,0.0315,0.251),
+("01.06",1867,85887,907,218,0.0106,0.240),
+("08.06",1551,144413,1674,382,0.0116,0.228),
+("15.06",1627,56064,595,148,0.0106,0.249),
+("22.06",2007,172640,2085,322,0.0121,0.154),
+("29.06",2275,60259,520,117,0.0086,0.225),
+("06.07",2392,71410,658,122,0.0092,0.185),
+("13.07",2315,63774,493,77,0.0077,0.156),
+("20.07",2742,29328,281,56,0.0096,0.199),
+]
 
-groups = {
- "S1 Транспорт и дорога": [4,12,17,23,25,31,32,34,40,42,45,51,54],
- "  S1a поезд+самолёт": [4,12,23,34],
- "  S1b метро": [17,31,51],
- "  S1c автобус": [54],
- "  S1d за рулём": [25,32,40,42],
- "  S1e пешеход": [45],
- "S2 Магазины и услуги": [6,8,10,11,13,19,38,48,50,52],
- "  S2a одежда/косметика": [8,11,38,52],
- "  S2b продукты": [13,50],
- "  S2c распродажи/ярмарки": [6,48],
- "  S2d сервис": [10,19],
- "S3 Культурные площадки": [1,7,15,43,46,47],
- "S4 Подъезд/лифт/лестница": [16,18,26,39],
- "S5 Шум/запах/привычки": [5,22,24,28,29,35,41],
- "S6 Чувства и тело на публике": [27,30,37,44,53,55],
- "S7 Улица/погода/природа/животные": [2,3,9,21,33,49],
- "S8 Память и чужие культуры": [14,20,36],
-}
+words=[r[1] for r in rows]; rt=[r[6] for r in rows]
+print("median words", st.median(words), "median readthrough", st.median(rt))
+print("median opens", st.median([r[3] for r in rows]), "median reads", st.median([r[4] for r in rows]))
+print("median showings", st.median([r[2] for r in rows]), "median ctr", st.median([r[5] for r in rows]))
 
-def med(xs):
-    return int(statistics.median(xs)) if xs else None
+# Spearman
+def rank(v):
+    s=sorted(range(len(v)), key=lambda i:v[i])
+    r=[0]*len(v)
+    for pos,i in enumerate(s): r[i]=pos+1
+    return r
+rw=rank(words); rr=rank(rt)
+n=len(words)
+d2=sum((a-b)**2 for a,b in zip(rw,rr))
+rho=1-6*d2/(n*(n*n-1))
+print("spearman words vs readthrough rho=", round(rho,3))
 
-def show(name, ids, drop_zero=True):
-    sel = [arts[i-1] for i in ids]
-    if drop_zero:
-        sel = [a for a in sel if a["показы"] > 0]
-    print(f"\n=== {name} (n={len(ids)}, с данными={len(sel)}) ===")
-    for ep in ["1_до_спада", "2_склон", "3_дно"]:
-        g = [a for a in sel if a["эпоха"] == ep]
-        if g:
-            print(f"  {ep}: n={len(g)} мед.показы={med([a['показы'] for a in g])} мед.дочит={med([a['дочитывания'] for a in g])} мед.CTR={round(statistics.median([a['CTR'] for a in g]),4)}")
-    print(f"  ВСЕГО: мед.показы={med([a['показы'] for a in sel])} мед.дочит={med([a['дочитывания'] for a in sel])}")
-    best = max(sel, key=lambda a: a["показы"])
-    worst = min(sel, key=lambda a: a["показы"])
-    print(f"  BEST: {best['заголовок']} | {best['дата']} | {best['эпоха']} | {best['показы']} / {best['дочитывания']} / CTR {best['CTR']} / комм {best['комментарии']}")
-    print(f"  WORST: {worst['заголовок']} | {worst['дата']} | {worst['эпоха']} | {worst['показы']} / {worst['дочитывания']} / CTR {worst['CTR']} / комм {worst['комментарии']}")
-    for a in sorted(sel, key=lambda x: -x["показы"]):
-        print(f"    - {a['показы']:>8} / {a['дочитывания']:>7} | {a['эпоха']} | {a['дата']} | {a['функция']:<25} | {a['заголовок']}")
+# split medians (n=5 each -> below threshold, only for illustration)
+print("first5 median words/rt", st.median(words[:5]), st.median(rt[:5]))
+print("last5 median words/rt", st.median(words[5:]), st.median(rt[5:]))
 
-for k, v in groups.items():
-    show(k, v)
+# Nielsen model: time = 25 + 4.4 s per 100 words ; needed time at reading speed
+def nielsen(w, wpm):
+    t_avail = 25 + 0.044*w
+    t_needed = w/wpm*60
+    return t_avail, t_needed, t_avail/t_needed
+for w in [1505,1867,2517,2742,592,111,917]:
+    for wpm in (200,250):
+        a,b,f = nielsen(w,wpm)
+        print(f"words={w} wpm={wpm}: avail={a:.0f}s needed={b:.0f}s share={f*100:.1f}%")
 
-print("\n\n===== ПО СЦЕНЕ ЦЕЛИКОМ =====")
-sel = [a for a in arts if a["показы"] > 0]
-for ep in ["1_до_спада", "2_склон", "3_дно"]:
-    g = [a for a in sel if a["эпоха"] == ep]
-    print(f"{ep}: n={len(g)} мед.показы={med([a['показы'] for a in g])} мед.дочит={med([a['дочитывания'] for a in g])} мед.CTR={round(statistics.median([a['CTR'] for a in g]),4)} мед.комм={med([a['комментарии'] for a in g])}")
+print()
+print("draft: words per event", 2517/41, "paragraphs", 2517/42)
+print("draft reading time min @180/200/250 wpm", 2517/180, 2517/200, 2517/250)
+print("111-word threshold ratio", 2517/111)
+print("1250-word erratic threshold ratio", 2517/1250)
+print("Medium 7min~1600 words ratio", 2517/1600)
 
-print("\n===== ПО ФУНКЦИИ =====")
-from collections import defaultdict
-f = defaultdict(list)
-for a in sel:
-    f[(a["функция"], a["эпоха"])].append(a)
-for k in sorted(f):
-    g = f[k]
-    print(f"{k}: n={len(g)} мед.показы={med([a['показы'] for a in g])} мед.дочит={med([a['дочитывания'] for a in g])}")
+# scenario math: to reach channel median reads 1136
+showings = 63774
+for rtx in (0.244, 0.35, 0.50, 0.53):
+    opens_needed = 1136/rtx
+    print(f"readthrough {rtx:.0%} -> opens needed {opens_needed:.0f}, CTR needed {opens_needed/showings*100:.2f}%")
+# if only readthrough fixed, keep opens 595
+for rtx in (0.244,0.35,0.50):
+    print(f"opens 595 at readthrough {rtx:.0%} -> reads {595*rtx:.0f}")
+# if only CTR fixed to channel 5.82%
+opens = showings*0.0582
+print("CTR 5.82% -> opens", round(opens), "reads at 24.4%:", round(opens*0.244), "at 50%:", round(opens*0.50))
+
+# Iyengar jam ratio
+print("jam: 6 opts 30% vs 24 opts 3% -> ratio", 30/3)
+# 401k naive extrapolation
+print("401k naive: 31 extra items x 0.175pp =", 31*0.175, "pp")
